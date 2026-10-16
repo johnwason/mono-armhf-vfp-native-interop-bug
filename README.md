@@ -74,7 +74,7 @@ lower addresses
 
 `mono_arm_throw_exception ()` copies 16 doubles from that pointer into `ctx.fregs` (L168), so `fregs[0]` is padding and `fregs[n]` is the saved `d(n-1)`. On Linux the unwinder doesn't touch `fregs[8..15]` (that code is `#ifdef TARGET_IOS`, L495–515), and `restore_context` reloads all 16 registers from `ctx.fregs` (L72–73) before jumping to the catch handler. Every VFP register comes back as its lower neighbour.
 
-Mono's own code never notices: on armhf the JIT doesn't allocate `d8`–`d15` at all ([`mini-arm.h`](https://github.com/mono/mono/blob/main/mono/mini/mini-arm.h#L68-L82)), so managed code neither uses them nor saves them. The corrupted values pass straight through to the native caller when the callback returns.
+Mono's own code never notices: on armhf the JIT never allocates `d8`–`d15` ([`mini-arm.h`](https://github.com/mono/mono/blob/main/mono/mini/mini-arm.h#L68-L82)). Its only use of them is `d14`/`d15` as scratch, which it saves and restores around each use (`mono_arm_emit_vfp_scratch_save`/`_restore` in `mini-arm.c`). Nothing in managed code puts the corrupted values back, so they pass straight through to the native caller when the callback returns.
 
 The hard-coded `8` is only correct when the parameter area is 8 bytes, as it still is for the corlib and resume-unwind trampolines. The fix is to use the computed size:
 
