@@ -1,0 +1,4 @@
+build/
+build.tgz
+managed/bin/
+managed/obj/

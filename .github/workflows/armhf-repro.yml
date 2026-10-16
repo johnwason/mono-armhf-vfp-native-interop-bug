@@ -1,0 +1,115 @@
+# Demonstrates that mono on armhf corrupts callee-saved VFP registers (d8-d15)
+# when a managed callback called from native code throws and catches an
+# exception. No ARM hardware is needed:
+#
+#   build  cross-compiles the native library for armhf on x86-64, compiles the
+#          managed reproducer for mono (mcs) and .NET 10, and downloads the
+#          linux-arm .NET runtime.
+#   test   runs the result in Debian armhf containers with podman + qemu-user.
+#
+# Each test job fails if the reproducer detects corruption. Expected outcome:
+# the mono jobs fail (the bug) and the .NET 10 job passes (the control).
+
+name: armhf mono VFP register corruption
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: Callback invocations per row
+        default: "2000"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Cross-compile (x86-64 to armhf)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install armhf cross toolchain and mcs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf libc6-dev-armhf-cross mono-mcs
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build
+        run: ./scripts/build.sh
+
+      - name: Download linux-arm .NET runtime
+        run: ./scripts/fetch-dotnet-armhf.sh
+
+      # tar keeps the executable bit on build/dotnet-arm/dotnet; upload-artifact does not
+      - name: Package
+        run: tar czf build.tgz build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build
+          path: build.tgz
+
+  test:
+    name: ${{ matrix.runtime }} on Debian ${{ matrix.distro }} (armhf, qemu)
+    needs: build
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { distro: sid, runtime: mono }       # mono 6.14
+          - { distro: trixie, runtime: mono }    # mono 6.12
+          - { distro: bookworm, runtime: mono }  # mono 6.8
+          - { distro: sid, runtime: dotnet }     # .NET 10 control
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: build
+
+      - name: Unpack
+        run: tar xzf build.tgz
+
+      - name: Register qemu-arm with binfmt_misc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-user-static
+          if [ ! -e /proc/sys/fs/binfmt_misc/qemu-arm ]; then
+            sudo systemctl restart systemd-binfmt
+          fi
+          cat /proc/sys/fs/binfmt_misc/qemu-arm
+          podman --version
+
+      - name: Pull armhf image
+        run: podman pull --platform linux/arm/v7 docker.io/library/debian:${{ matrix.distro }}
+
+      - name: Run reproducer
+        env:
+          ITERATIONS: ${{ inputs.iterations || '2000' }}
+        run: ./scripts/run-armhf.sh "${{ matrix.distro }}" "${{ matrix.runtime }}" "$ITERATIONS" 2>&1 | tee result.log
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "### ${{ matrix.runtime }} on Debian ${{ matrix.distro }} (armhf under qemu)"
+            echo
+            echo '```'
+            grep -E '^(Runtime|package):' result.log || true
+            sed -n '/^Exact probe/,$p' result.log || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: result-${{ matrix.runtime }}-${{ matrix.distro }}
+          path: result.log

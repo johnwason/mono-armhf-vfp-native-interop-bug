@@ -1,0 +1,39 @@
+00000884 <loop_check>:
+ 884:	stmdb	sp!, {r4, r5, r6, r7, r8, r9, sl, lr}
+ 888:	mov	r9, r2
+ 88a:	ldr.w	r8, [pc, #92]	@ 8e8 <loop_check+0x64>
+ 88e:	vpush	{d8}
+ 892:	movs	r2, #0
+ 894:	add	r8, pc
+ 896:	movs	r3, #0
+ 898:	subs	r6, r1, #0
+ 89a:	strd	r2, r3, [r9]
+ 89e:	vldr	d8, [r8]
+ 8a2:	ble.n	8dc <loop_check+0x58>
+ 8a4:	ldr.w	sl, [pc, #68]	@ 8ec <loop_check+0x68>
+ 8a8:	movs	r4, #0
+ 8aa:	mov	r7, r0
+ 8ac:	mov	r5, r4
+ 8ae:	add	sl, pc
+ 8b0:	blx	r7
+ 8b2:	vldr	d7, [r8]
+ 8b6:	adds	r4, #1
+ 8b8:	vcmp.f64	d7, d8
+ 8bc:	vmrs	APSR_nzcv, fpscr
+ 8c0:	beq.n	8ce <loop_check+0x4a>
+ 8c2:	cbnz	r5, 8c8 <loop_check+0x44>
+ 8c4:	vstr	d8, [r9]
+ 8c8:	vldr	d8, [sl]
+ 8cc:	adds	r5, #1
+ 8ce:	cmp	r6, r4
+ 8d0:	bne.n	8b0 <loop_check+0x2c>
+ 8d2:	vpop	{d8}
+ 8d6:	mov	r0, r5
+ 8d8:	ldmia.w	sp!, {r4, r5, r6, r7, r8, r9, sl, pc}
+ 8dc:	vpop	{d8}
+ 8e0:	movs	r5, #0
+ 8e2:	mov	r0, r5
+ 8e4:	ldmia.w	sp!, {r4, r5, r6, r7, r8, r9, sl, pc}
+ 8e8:	.word	0x000017b8
+ 8ec:	.word	0x0000179e
+
