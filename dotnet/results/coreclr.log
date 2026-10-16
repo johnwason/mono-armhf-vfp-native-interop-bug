@@ -1,0 +1,2 @@
+Runtime: .NET 8.0.32 (CoreCLR), Arm
+OK: 1000 calls, 1000 exceptions handled inside the callback

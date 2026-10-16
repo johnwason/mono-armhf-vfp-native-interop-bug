@@ -1,16 +1,19 @@
 arm: pass the correct fp_regs pointer from the throw trampolines
 
 get_throw_trampoline () saves d0-d15 at SP, then reserves a parameter area
-of param_size bytes below them, but passes the saved FP registers to
-mono_arm_throw_exception () & co. as SP + 8. That is only right when
-param_size is 8. For the throw and rethrow trampolines the extra
-preserve_ips argument makes it 12, which ALIGN_TO rounds up to 16 on armhf,
-so fp_regs points 8 bytes below the saved block: ctx.fregs[n] receives the
-saved d(n-1), and mono_restore_context () resumes the catch handler with
-every VFP register shifted up by one.
+of param_size bytes below them, but passes the saved FP registers to the
+C handler as SP + 8. That is only right when param_size is 8, as it is for
+the corlib and resume-unwind trampolines. For the throw, rethrow and
+rethrow_preserve trampolines the extra preserve_ips argument makes it 12,
+which ALIGN_TO rounds up to 16 on armhf (24 on watchOS), so the fp_regs
+pointer that mono_arm_throw_exception () receives is 8 bytes below the
+saved block: ctx.fregs[n] holds the saved d(n-1), and mono_restore_context ()
+resumes the catch handler with every VFP register shifted up by one. A
+rethrow passes through the trampoline twice and shifts them by two.
 
-The JIT never uses d8-d15 on armhf, so nothing repairs them before a
-managed callback returns. A native caller of a reverse P/Invoke callback
+The JIT never allocates d8-d15 on armhf (it only borrows d14/d15 as
+scratch, saving and restoring them around each use), so nothing repairs
+them before a managed callback returns. A native caller of a reverse P/Invoke callback
 that throws and catches an exception gets d8-d15 back as its d7-d14,
 violating AAPCS-VFP.
 

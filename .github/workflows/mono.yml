@@ -1,0 +1,175 @@
+# Classic mono (Debian's mono-runtime) on armhf, without ARM hardware:
+#
+#   build          cross-compiles the reproducer in mono/ on x86-64 (native
+#                  library, Repro.exe for mono, Repro.dll for the .NET 10
+#                  control) and downloads the linux-arm .NET runtime
+#   build-runtime  cross-compiles Debian sid's mono runtime for armhf, once
+#                  unmodified and once with mono/patches/
+#   test           runs each case in a Debian armhf container with podman +
+#                  qemu-user and checks the expected outcome
+#
+# Every job passes when the result is as expected: packaged and unpatched mono
+# must show the corruption, .NET 10 and patched mono must not.
+
+name: mono on armhf
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: Callback invocations per row
+        default: "2000"
+
+permissions:
+  contents: read
+
+# An explicit `shell: bash` runs steps with -eo pipefail.
+defaults:
+  run:
+    shell: bash
+    working-directory: mono
+
+jobs:
+  build:
+    name: Build reproducer (x86-64 to armhf)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install armhf cross toolchain and mcs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf libc6-dev-armhf-cross mono-mcs
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build
+        run: ./scripts/build.sh
+
+      - name: Download linux-arm .NET runtime
+        run: ./scripts/fetch-dotnet-armhf.sh
+
+      # tar keeps the executable bit on build/dotnet-arm/dotnet; upload-artifact does not
+      - name: Package
+        run: tar czf ../repro.tgz build/mono build/net10 build/dotnet-arm build/loop_check.disasm
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: repro
+          path: repro.tgz
+
+  build-runtime:
+    name: Cross-compile mono runtime (unpatched and patched)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: ./scripts/build-mono-armhf.sh sid 2>&1 | tee ../mono-runtime-build.log
+
+      - name: Package
+        run: tar czf ../mono-runtime.tgz build/mono-xbuild/VERSION build/mono-xbuild/unpatched build/mono-xbuild/patched
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mono-runtime
+          path: |
+            mono-runtime.tgz
+            mono-runtime-build.log
+
+  test:
+    name: ${{ matrix.runtime }} on Debian ${{ matrix.distro }} (expect ${{ matrix.expect }})
+    needs: [build, build-runtime]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { distro: sid,      runtime: mono,           expect: corruption }  # mono 6.14
+          - { distro: trixie,   runtime: mono,           expect: corruption }  # mono 6.12
+          - { distro: bookworm, runtime: mono,           expect: corruption }  # mono 6.8
+          - { distro: sid,      runtime: dotnet,         expect: pass }        # .NET 10, CoreCLR
+          - { distro: sid,      runtime: mono-unpatched, expect: corruption }  # 6.14 built from source
+          - { distro: sid,      runtime: mono-patched,   expect: pass }        # 6.14 with the fix
+    env:
+      ITERATIONS: ${{ inputs.iterations || '2000' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: repro
+          path: mono
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: mono-runtime
+          path: mono
+
+      - name: Unpack
+        run: |
+          tar xzf repro.tgz
+          tar xzf mono-runtime.tgz
+
+      - name: Register qemu-arm with binfmt_misc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-user-static
+          if [ ! -e /proc/sys/fs/binfmt_misc/qemu-arm ]; then
+            sudo systemctl restart systemd-binfmt
+          fi
+          cat /proc/sys/fs/binfmt_misc/qemu-arm
+          podman --version
+
+      - name: Pull armhf image
+        run: podman pull --platform linux/arm/v7 docker.io/library/debian:${{ matrix.distro }}
+
+      - name: Run reproducer
+        run: |
+          set +e
+          ./scripts/run-armhf.sh "${{ matrix.distro }}" "${{ matrix.runtime }}" "$ITERATIONS" 2>&1 | tee result.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          echo "reproducer exit code: $rc"
+          case "${{ matrix.expect }}" in
+            corruption)
+              if [ "$rc" -eq 1 ] && grep -q '^RESULT: FAIL' result.log; then
+                echo "callee-saved VFP registers corrupted, as expected"
+              else
+                echo "::error::expected the reproducer to detect corruption (exit 1), got exit $rc"
+                exit 1
+              fi ;;
+            pass)
+              if [ "$rc" -eq 0 ] && grep -q '^RESULT: PASS' result.log; then
+                echo "callee-saved state preserved, as expected"
+              else
+                echo "::error::expected the reproducer to pass (exit 0), got exit $rc"
+                exit 1
+              fi ;;
+          esac
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "### ${{ matrix.runtime }} on Debian ${{ matrix.distro }} (armhf under qemu), expected: ${{ matrix.expect }}"
+            echo
+            echo '```'
+            grep -E '^(Runtime|package):' result.log || true
+            sed -n '/^Exact probe/,$p' result.log || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: result-${{ matrix.runtime }}-${{ matrix.distro }}
+          path: mono/result.log

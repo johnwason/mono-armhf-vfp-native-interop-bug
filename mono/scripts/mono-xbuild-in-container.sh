@@ -29,6 +29,10 @@ mkdir -p /x/src /x/build /x/unpatched /x/patched
 cd /x/src
 apt-get source -qq mono 2>&1 | grep -v '^W: Download is performed unsandboxed' || true
 SRC=$(echo /x/src/mono-*/)
+if [ ! -d "$SRC" ]; then
+    echo "apt-get source mono did not produce a source tree" >&2
+    exit 1
+fi
 VERSION=$(dpkg-parsechangelog -l "$SRC/debian/changelog" -S Version)
 echo "source: mono $VERSION"
 

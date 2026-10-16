@@ -1,4 +1,7 @@
-build/
-build.tgz
-managed/bin/
-managed/obj/
+mono/build/
+mono/managed/bin/
+mono/managed/obj/
+dotnet/out/
+dotnet/managed/bin/
+dotnet/managed/obj/
+*.tgz

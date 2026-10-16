@@ -54,10 +54,33 @@ static class Repro
         catch (InvalidOperationException) { }
     }
 
+    // throw; inside a catch, caught by an outer handler: two passes through
+    // mono's throw/rethrow trampoline
+    static void Rethrow()
+    {
+        try
+        {
+            try { throw new InvalidOperationException("x"); }
+            catch (InvalidOperationException) { throw; }
+        }
+        catch (InvalidOperationException) { }
+    }
+
+    // An exception raised by a JIT check (array bounds), which mono throws
+    // through a different trampoline (control)
+    static int[] smallArray = new int[1];
+    static int badIndex = 5;
+
+    static void IndexOutOfRange()
+    {
+        try { sink += smallArray[badIndex]; }
+        catch (IndexOutOfRangeException) { }
+    }
+
     // Kept in static fields so the delegates (and their native thunks) live
     // for the whole run.
-    static readonly Callback[] Callbacks = { Plain, TryFinally, ThrowCatch, ThrowCatchNested };
-    static readonly string[] CallbackNames = { "plain", "try_finally", "throw_catch", "throw_catch_nested" };
+    static readonly Callback[] Callbacks = { Plain, TryFinally, IndexOutOfRange, ThrowCatch, ThrowCatchNested, Rethrow };
+    static readonly string[] CallbackNames = { "plain", "try_finally", "index_oob", "throw_catch", "throw_catch_nested", "rethrow" };
 
     static string RuntimeName()
     {
