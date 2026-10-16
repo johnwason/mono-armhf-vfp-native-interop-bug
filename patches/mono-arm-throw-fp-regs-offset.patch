@@ -1,0 +1,38 @@
+arm: pass the correct fp_regs pointer from the throw trampolines
+
+get_throw_trampoline () saves d0-d15 at SP, then reserves a parameter area
+of param_size bytes below them, but passes the saved FP registers to
+mono_arm_throw_exception () & co. as SP + 8. That is only right when
+param_size is 8. For the throw and rethrow trampolines the extra
+preserve_ips argument makes it 12, which ALIGN_TO rounds up to 16 on armhf,
+so fp_regs points 8 bytes below the saved block: ctx.fregs[n] receives the
+saved d(n-1), and mono_restore_context () resumes the catch handler with
+every VFP register shifted up by one.
+
+The JIT never uses d8-d15 on armhf, so nothing repairs them before a
+managed callback returns. A native caller of a reverse P/Invoke callback
+that throws and catches an exception gets d8-d15 back as its d7-d14,
+violating AAPCS-VFP.
+
+Pass SP + param_size instead.
+
+--- a/mono/mini/exceptions-arm.c
++++ b/mono/mini/exceptions-arm.c
+@@ -287,7 +287,7 @@
+ 	ARM_ADD_REG_IMM8 (code, ARMREG_R3, ARMREG_SP, (cfa_offset - (MONO_ARM_NUM_SAVED_REGS * sizeof (target_mgreg_t))));
+ 	if (resume_unwind || corlib) {
+ 		/* fp regs */
+-		ARM_ADD_REG_IMM8 (code, ARMREG_LR, ARMREG_SP, 8);
++		ARM_ADD_REG_IMM8 (code, ARMREG_LR, ARMREG_SP, param_size);
+ 		ARM_STR_IMM (code, ARMREG_LR, ARMREG_SP, 0);
+ 	} else {
+ 		/* preserve_ips */
+@@ -295,7 +295,7 @@
+ 		ARM_STR_IMM (code, ARMREG_R5, ARMREG_SP, 4);
+ 
+ 		/* fp regs */
+-		ARM_ADD_REG_IMM8 (code, ARMREG_LR, ARMREG_SP, 8);
++		ARM_ADD_REG_IMM8 (code, ARMREG_LR, ARMREG_SP, param_size);
+ 		ARM_STR_IMM (code, ARMREG_LR, ARMREG_SP, 0);
+ 	}
+ 
