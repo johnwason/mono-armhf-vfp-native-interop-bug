@@ -1,0 +1,44 @@
+== environment
+arch:   armv7l
+distro: Debian GNU/Linux forky/sid
+glibc:  ldd (Debian GLIBC 2.43-7) 2.43
+Microsoft.NETCore.App 10.0.13 [/work/dotnet-arm/shared/Microsoft.NETCore.App]
+== running
+Runtime:    .NET 10.0.13 (Arm)
+OS:         Unix 7.0.0.38
+Iterations: 2000 per row
+
+Exact probe: calls in which a callee-saved register or the caller's stack slot changed
+  'shifted' = calls where d8-d15 came back as the caller's d7-d14, i.e. moved up one register
+callback             thread          bad calls    shifted  changed (calls, first value seen)
+plain                main               0/2000     0/2000  -
+plain                native pthread     0/2000     0/2000  -
+try_finally          main               0/2000     0/2000  -
+try_finally          native pthread     0/2000     0/2000  -
+index_oob            main               0/2000     0/2000  -
+index_oob            native pthread     0/2000     0/2000  -
+throw_catch          main               0/2000     0/2000  -
+throw_catch          native pthread     0/2000     0/2000  -
+throw_catch_nested   main               0/2000     0/2000  -
+throw_catch_nested   native pthread     0/2000     0/2000  -
+rethrow              main               0/2000     0/2000  -
+rethrow              native pthread     0/2000     0/2000  -
+
+Compiler-generated loop: iterations in which a C local held in d8 across the call changed
+  (with the shift above, d8 gets whatever the caller left in d7, so this count depends on
+   the compiled code: after the first miss this loop happens to leave the right value in d7)
+callback             thread          bad iters  first wrong value
+plain                main               0/2000  -
+plain                native pthread     0/2000  -
+try_finally          main               0/2000  -
+try_finally          native pthread     0/2000  -
+index_oob            main               0/2000  -
+index_oob            native pthread     0/2000  -
+throw_catch          main               0/2000  -
+throw_catch          native pthread     0/2000  -
+throw_catch_nested   main               0/2000  -
+throw_catch_nested   native pthread     0/2000  -
+rethrow              main               0/2000  -
+rethrow              native pthread     0/2000  -
+
+RESULT: PASS - callee-saved state preserved

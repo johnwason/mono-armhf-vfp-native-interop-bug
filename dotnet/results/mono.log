@@ -1,0 +1,42 @@
+Runtime: .NET 8.0.32 (Mono), Arm
+native: call 0: completion handler kept in d8 came back as 0x40f03000 instead of 0x40f01455; calling it
+
+=================================================================
+	Native Crash Reporting
+=================================================================
+Got a SIGSEGV while executing native code. This usually indicates
+a fatal error in the mono runtime or one of the native libraries 
+used by your application.
+=================================================================
+
+=================================================================
+	Native stacktrace:
+=================================================================
+	 (No frames) 
+
+
+=================================================================
+	External Debugger Dump:
+=================================================================
+mono_gdb_render_native_backtraces not supported on this platform, unable to find gdb or lldb
+
+=================================================================
+	Basic Fault Address Reporting
+=================================================================
+Memory around native instruction pointer (0x40f03000):0x40f02ff0  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+0x40f03000  20 1f 00 00 78 86 6e 00 dc db 80 40 3c 13 f0 40   ...x.n....@<..@
+0x40f03010  f9 6c a3 40 bc 14 f0 40 3c 13 f0 40 c9 26 a2 40  .l.@...@<..@.&.@
+0x40f03020  3d 6c a1 40 00 00 00 00 f0 4d af 40 00 00 00 00  =l.@.....M.@....
+
+=================================================================
+	Managed Stacktrace:
+=================================================================
+	  at <unknown> <0xffffffff>
+	  at Program:run_job <0x0003b>
+	  at Program:Main <0x001eb>
+	  at <Module>:runtime_invoke_int <0x00093>
+=================================================================
+qemu: uncaught target signal 6 (Aborted) - core dumped
+timeout: the monitored command dumped core
+qemu: uncaught target signal 6 (Aborted) - core dumped
+bash: line 7:   260 Aborted                 LD_LIBRARY_PATH=/out/mono timeout -k 10 120 ./CrashDemo

@@ -1,0 +1,47 @@
+arm: pass the correct fp_regs pointer from the throw trampolines
+
+get_throw_trampoline () saves d0-d15 at SP, then reserves a parameter area
+of param_size bytes below them, but passes the saved FP registers to the
+C handler as SP + 8. That is only right when param_size is 8, as it is for
+the corlib and resume-unwind trampolines. For the throw, rethrow and
+rethrow_preserve trampolines the extra preserve_ips argument makes it 12,
+which ALIGN_TO rounds up to 16 on armhf (24 on watchOS), so the fp_regs
+pointer that mono_arm_throw_exception () receives is 8 bytes below the
+saved block: ctx.fregs[n] holds the saved d(n-1), and mono_restore_context ()
+resumes the catch handler with every VFP register shifted up by one. A
+rethrow passes through the trampoline twice and shifts them by two.
+
+The JIT never allocates d8-d15 on armhf (it only borrows d14/d15 as
+scratch, saving and restoring them around each use), so nothing repairs
+them before a managed callback returns. A native caller of a reverse P/Invoke callback
+that throws and catches an exception gets d8-d15 back as its d7-d14,
+violating AAPCS-VFP.
+
+Pass SP + param_size instead.
+
+The mismatch dates from e46fa20466 ("[crash] Fix trampoline rethrows to
+set caught_in_unmanaged", 2018-10), which added the extra argument without
+updating the hard-coded offset (4 bytes low at that point). Aligning the
+parameter area (98a1d40584, #14078) made it the current 8 bytes. The first
+release with the bug is mono 6.0; 5.20 and earlier are not affected.
+
+--- a/mono/mini/exceptions-arm.c
++++ b/mono/mini/exceptions-arm.c
+@@ -287,7 +287,7 @@
+ 	ARM_ADD_REG_IMM8 (code, ARMREG_R3, ARMREG_SP, (cfa_offset - (MONO_ARM_NUM_SAVED_REGS * sizeof (target_mgreg_t))));
+ 	if (resume_unwind || corlib) {
+ 		/* fp regs */
+-		ARM_ADD_REG_IMM8 (code, ARMREG_LR, ARMREG_SP, 8);
++		ARM_ADD_REG_IMM8 (code, ARMREG_LR, ARMREG_SP, param_size);
+ 		ARM_STR_IMM (code, ARMREG_LR, ARMREG_SP, 0);
+ 	} else {
+ 		/* preserve_ips */
+@@ -295,7 +295,7 @@
+ 		ARM_STR_IMM (code, ARMREG_R5, ARMREG_SP, 4);
+ 
+ 		/* fp regs */
+-		ARM_ADD_REG_IMM8 (code, ARMREG_LR, ARMREG_SP, 8);
++		ARM_ADD_REG_IMM8 (code, ARMREG_LR, ARMREG_SP, param_size);
+ 		ARM_STR_IMM (code, ARMREG_LR, ARMREG_SP, 0);
+ 	}
+ 

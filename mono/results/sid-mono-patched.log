@@ -2,9 +2,12 @@
 arch:   armv7l
 distro: Debian GNU/Linux forky/sid
 glibc:  ldd (Debian GLIBC 2.43-7) 2.43
-Microsoft.NETCore.App 10.0.13 [/work/dotnet-arm/shared/Microsoft.NETCore.App]
+== installing mono-runtime (class libraries for the cross-compiled runtime)
+package: mono-runtime 6.14.1+ds2-3
+runtime: cross-compiled mono 6.14.1+ds2-3, patched
+Mono JIT compiler version 6.14.1 (explicit/bc83d145 Fri Oct 16 21:37:36 UTC 2026)
 == running
-Runtime:    .NET 10.0.13 (Arm)
+Runtime:    Mono 6.14.1 (explicit/bc83d145 Fri Oct 16 21:37:36 UTC 2026)
 OS:         Unix 7.0.0.38
 Iterations: 2000 per row
 
@@ -15,10 +18,14 @@ plain                main               0/2000     0/2000  -
 plain                native pthread     0/2000     0/2000  -
 try_finally          main               0/2000     0/2000  -
 try_finally          native pthread     0/2000     0/2000  -
+index_oob            main               0/2000     0/2000  -
+index_oob            native pthread     0/2000     0/2000  -
 throw_catch          main               0/2000     0/2000  -
 throw_catch          native pthread     0/2000     0/2000  -
 throw_catch_nested   main               0/2000     0/2000  -
 throw_catch_nested   native pthread     0/2000     0/2000  -
+rethrow              main               0/2000     0/2000  -
+rethrow              native pthread     0/2000     0/2000  -
 
 Compiler-generated loop: iterations in which a C local held in d8 across the call changed
   (with the shift above, d8 gets whatever the caller left in d7, so this count depends on
@@ -28,9 +35,13 @@ plain                main               0/2000  -
 plain                native pthread     0/2000  -
 try_finally          main               0/2000  -
 try_finally          native pthread     0/2000  -
+index_oob            main               0/2000  -
+index_oob            native pthread     0/2000  -
 throw_catch          main               0/2000  -
 throw_catch          native pthread     0/2000  -
 throw_catch_nested   main               0/2000  -
 throw_catch_nested   native pthread     0/2000  -
+rethrow              main               0/2000  -
+rethrow              native pthread     0/2000  -
 
 RESULT: PASS - callee-saved state preserved

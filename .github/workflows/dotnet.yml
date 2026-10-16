@@ -1,0 +1,120 @@
+# .NET's own Mono runtime on 32-bit ARM, without ARM hardware:
+#
+#   build  cross-compiles dotnet/native for armhf and publishes the .NET 8 app
+#          in dotnet/managed for linux-arm twice: on CoreCLR and on Mono
+#          (UseMonoRuntime=true). Runs in the .NET 8 SDK container.
+#   test   runs each in a Debian bookworm armhf container with podman +
+#          qemu-user and checks the expected outcome
+#
+# Every job passes when the result is as expected: CoreCLR completes all jobs,
+# Mono corrupts d8 and the native code crashes.
+
+name: .NET Mono runtime on armhf
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+    working-directory: dotnet
+
+jobs:
+  build:
+    name: Build example (x86-64 to linux-arm)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: ./build.sh
+
+      # tar keeps the executable bits; upload-artifact does not
+      - name: Package
+        run: tar czf ../dotnet-example.tgz out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dotnet-example
+          path: dotnet-example.tgz
+
+  test:
+    name: .NET 8 on ${{ matrix.runtime }} (expect ${{ matrix.expect }})
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runtime: coreclr, expect: pass }
+          - { runtime: mono,    expect: crash }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dotnet-example
+          path: dotnet
+
+      - name: Unpack
+        run: tar xzf dotnet-example.tgz
+
+      - name: Register qemu-arm with binfmt_misc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-user-static
+          if [ ! -e /proc/sys/fs/binfmt_misc/qemu-arm ]; then
+            sudo systemctl restart systemd-binfmt
+          fi
+          cat /proc/sys/fs/binfmt_misc/qemu-arm
+
+      - name: Pull armhf image
+        run: podman pull --platform linux/arm/v7 docker.io/library/debian:bookworm
+
+      - name: Run example
+        run: |
+          set +e
+          ./run.sh "${{ matrix.runtime }}" 2>&1 | tee result.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          echo "exit code: $rc"
+          case "${{ matrix.expect }}" in
+            pass)
+              if [ "$rc" -eq 0 ] && grep -q '^OK: ' result.log; then
+                echo "all jobs completed, as expected"
+              else
+                echo "::error::expected all jobs to complete (exit 0), got exit $rc"
+                exit 1
+              fi ;;
+            crash)
+              if [ "$rc" -ne 0 ] && grep -q 'completion handler kept in d8 came back as' result.log; then
+                echo "d8 corrupted and the native code crashed, as expected"
+              else
+                echo "::error::expected d8 to be corrupted and the program to crash, got exit $rc"
+                exit 1
+              fi ;;
+          esac
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "### .NET 8 on ${{ matrix.runtime }}, linux-arm (armhf under qemu), expected: ${{ matrix.expect }}"
+            echo
+            echo '```'
+            grep -vE '^(Trying|Getting|Copying|Writing) ' result.log | head -40 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: result-dotnet-${{ matrix.runtime }}
+          path: dotnet/result.log
