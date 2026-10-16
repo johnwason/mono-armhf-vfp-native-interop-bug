@@ -19,6 +19,12 @@ violating AAPCS-VFP.
 
 Pass SP + param_size instead.
 
+The mismatch dates from e46fa20466 ("[crash] Fix trampoline rethrows to
+set caught_in_unmanaged", 2018-10), which added the extra argument without
+updating the hard-coded offset (4 bytes low at that point). Aligning the
+parameter area (98a1d40584, #14078) made it the current 8 bytes. The first
+release with the bug is mono 6.0; 5.20 and earlier are not affected.
+
 --- a/mono/mini/exceptions-arm.c
 +++ b/mono/mini/exceptions-arm.c
 @@ -287,7 +287,7 @@

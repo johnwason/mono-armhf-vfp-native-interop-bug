@@ -48,7 +48,8 @@ The workflow [`.github/workflows/dotnet.yml`](../.github/workflows/dotnet.yml) b
 
 ## Notes
 
-- **Why .NET 8:** it's the last release with a `linux-arm` Mono runtime pack (`Microsoft.NETCore.App.Runtime.Mono.linux-arm`, up to 8.0.x). The same code is in dotnet/runtime `main`, where Mono still serves Android `armeabi-v7a`. Android itself hasn't been tested.
+- **Why .NET 8:** it's the last release with a `linux-arm` Mono runtime pack. [`Microsoft.NETCore.App.Runtime.Mono.linux-arm`](https://www.nuget.org/packages/Microsoft.NETCore.App.Runtime.Mono.linux-arm#versions-body-tab) has stable versions up to 8.0.x, only previews for 9.0, and none for 10.0. The same code is in dotnet/runtime `main` (`src/mono/mono/mini/exceptions-arm.c`, lines 290 and 298), where Mono still serves Android `armeabi-v7a` ([`Microsoft.NETCore.App.Runtime.Mono.android-arm`](https://www.nuget.org/packages/Microsoft.NETCore.App.Runtime.Mono.android-arm) is current). Android itself hasn't been tested.
+- **This example doesn't test the fix.** That would mean rebuilding .NET's Mono runtime pack. The fix is verified with an A/B build of classic mono in [`../mono/`](../mono/), whose `exceptions-arm.c` has identical lines.
 - **Which runtime is which:** in the Mono build, `libcoreclr.so` is Mono, renamed so the standard .NET host can load it. The program reports which runtime it's on by checking for the Mono-only type `Mono.RuntimeStructs`.
 - **Why bookworm:** .NET 8's CoreCLR doesn't start on Debian sid's glibc 2.43. That's a separate .NET 8 issue.
 - **Mono's crash handler can hang.** It dumps the memory around the faulting instruction without checking that the memory is mapped. When it isn't, the dump faults again inside the handler and the process never exits. Under qemu this varies from run to run, so `run.sh` stops the program after 120 seconds (`TIMEOUT`) and returns exit code 124. Either way, the `native:` line has already shown that `d8` was corrupted.

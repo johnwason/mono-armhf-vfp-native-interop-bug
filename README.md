@@ -4,7 +4,7 @@ On 32-bit ARM Linux, when native code calls a managed callback through a delegat
 
 The ARM procedure call standard (AAPCS / AAPCS-VFP) requires a callee to preserve `d8`–`d15`, the same as `r4`–`r11`, and compiled native code relies on this. A value the caller keeps in one of them across the call is silently replaced. The result is wrong data or a crash in native code that has nothing to do with the exception.
 
-**Cause:** Mono's ARM throw trampoline passes the saved floating-point registers to the exception handler through a pointer that is 8 bytes too low. The catch handler resumes with every VFP register holding its lower neighbour's value. The bug is a hard-coded offset in `mono/mini/exceptions-arm.c`, introduced in mono 6.0 (2019). See [Root cause and fix](#root-cause-and-fix).
+**Cause:** Mono's ARM throw trampoline passes the saved floating-point registers to the exception handler through a pointer that is 8 bytes too low. The catch handler resumes with every VFP register holding its lower neighbour's value. The bug is a hard-coded offset in `mono/mini/exceptions-arm.c`. It has been in the source since October 2018 and in releases since mono 6.0 (2019). See [Root cause and fix](#root-cause-and-fix).
 
 | Runtime | Result |
 |---|---|
@@ -63,9 +63,13 @@ The hard-coded `8` is only correct when the parameter area is 8 bytes, as it was
 
 The full patch with a description is [`mono/patches/mono-arm-throw-fp-regs-offset.patch`](mono/patches/mono-arm-throw-fp-regs-offset.patch). It applies with `patch -p1` to Debian's mono 6.14.1 source and to mono `main`. For dotnet/runtime the same change applies to `src/mono/mono/mini/exceptions-arm.c`.
 
+### History
+
+The mismatch was introduced on mono's master branch by [`e46fa20466`](https://github.com/mono/mono/commit/e46fa20466) ("[crash] Fix trampoline rethrows to set caught_in_unmanaged", October 2018). That commit added the extra `preserve_ips` argument to the parameter area but kept the hard-coded `SP + 8`, which left the pointer 4 bytes low. Aligning the parameter area ([`98a1d40584`](https://github.com/mono/mono/commit/98a1d40584), [#14078](https://github.com/mono/mono/pull/14078), April 2019) made the error the current 8 bytes, a clean one-register shift. No release shipped the 4-byte form: 5.16, 5.18 and 5.20 contain neither change and reserve a fixed 8-byte area, and 6.0 was the first release with the bug.
+
 ### Scope
 
-- **Classic mono 6.0 and later** on 32-bit ARM with VFP. Mono 5.20 reserved a fixed 8-byte parameter area here and is not affected.
+- **Classic mono 6.0 and later** on 32-bit ARM with VFP. Mono 5.20 and earlier reserved a fixed 8-byte parameter area here and are not affected.
 - **.NET's Mono runtime** on 32-bit ARM: measured on linux-arm with .NET 8, the last release with a linux-arm Mono runtime pack. In current .NET this mainly means **Android `armeabi-v7a`**. Android hasn't been tested. The faulty branch runs whenever VFP is present, not only with the hard-float ABI, so softfp targets are expected to be affected too.
 - **Not affected:** CoreCLR, .NET Framework, 64-bit ARM (different code), and 32-bit ARM without VFP.
 - **A separate gap, not tested:** on Linux/ARM, `mono-sigcontext.h` doesn't define `UCONTEXT_REG_VFPREGS`, so exceptions raised from a signal never get the FP registers from the signal context. With hardware traps disabled this doesn't seem reachable from JIT code on Linux, but it might be on Android.
