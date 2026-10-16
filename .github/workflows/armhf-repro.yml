@@ -24,6 +24,12 @@ on:
 permissions:
   contents: read
 
+# An explicit `shell: bash` runs steps with -eo pipefail, so the reproducer's
+# exit code survives `| tee` (the implicit default is plain `bash -e`).
+defaults:
+  run:
+    shell: bash
+
 jobs:
   build:
     name: Cross-compile (x86-64 to armhf)
